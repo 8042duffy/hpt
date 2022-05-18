@@ -1,0 +1,54 @@
+# DOMAIN=example.com docker stack deploy -c posthog.yml posthog
+
+version: '3.8'
+
+services:
+  web:
+    image: posthog/posthog:${VERSION:-release-1.29.0}
+    environment:
+      - DATABASE_URL=postgres://posthog:myp@ssw0rd@postgres:5432/posthog
+      - IS_DOCKER=true
+      - REDIS_URL=redis://redis:6379/
+      - SECRET_KEY=${SECRET_KEY:-mys3cr3t}  # openssl rand -hex 32
+      - DISABLE_SECURE_SSL_REDIRECT=true
+      - SITE_URL=${SCHEME:-https}://${DOMAIN:-posthog.localhost}
+      - JS_URL=${SCHEME:-https}://${DOMAIN:-posthog.localhost}
+      - ASYNC_EVENT_PROPERTY_USAGE=1
+    deploy:
+      labels:
+        - traefik.enable=true
+        - traefik.http.routers.posthog-${NUMBER:-1}.rule=Host(`${DOMAIN:-posthog.localhost}`)
+        - traefik.http.routers.posthog-${NUMBER:-1}.entrypoints=${SCHEME:-https}
+        - traefik.http.routers.posthog-${NUMBER:-1}.service=posthog-${NUMBER:-1}
+        - traefik.http.routers.posthog-${NUMBER:-1}.tls.certresolver=letsencrypt
+        - traefik.http.services.posthog-${NUMBER:-1}.loadbalancer.server.port=8000
+    networks:
+      - traefik
+      - internal
+
+  redis:
+    image: redis:6-alpine
+    networks:
+      - internal
+
+  postgres:
+    image: postgres:12-alpine
+    environment:
+      - POSTGRES_DB=posthog
+      - POSTGRES_USER=posthog
+      - POSTGRES_PASSWORD=myp@ssw0rd
+    volumes:
+      - ${VOLUME_PATH}postgres:/var/lib/postgresql/data
+    networks:
+      - internal
+
+volumes:
+  postgres:
+
+networks:
+  internal:
+    driver: overlay
+    attachable: true
+  traefik:
+    external: true
+    name: traefik-net

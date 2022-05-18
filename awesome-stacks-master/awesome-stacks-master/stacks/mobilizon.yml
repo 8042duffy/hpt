@@ -1,0 +1,73 @@
+# DOMAIN=example.com docker stack deploy -c mobilizon.yml mobilizon
+# UPDATE "users" SET "role" = 'administrator' WHERE "email" = '<admin@example.com>';
+# chown -R 65534:65534 uploads/
+
+version: '3.8'
+
+services:
+  web:
+    image: framasoft/mobilizon:${VERSION:-2.0.0}
+    volumes:
+      - ${VOLUME_PATH}uploads:/var/lib/mobilizon/uploads
+    environment:
+      - MIX_ENV=${MIX_ENV:-prod}
+      - DOCKER=true
+      - MOBILIZON_INSTANCE_NAME=Mobilizon
+      - MOBILIZON_INSTANCE_HOST=${DOMAIN:-mobilizon.localhost}
+      - MOBILIZON_INSTANCE_EMAIL=${ADMIN_EMAIL:-admin@example.com}
+      - MOBILIZON_REPLY_EMAIL=${ADMIN_EMAIL:-admin@example.com}
+      - MOBILIZON_ADMIN_EMAIL=${ADMIN_EMAIL:-admin@example.com}
+      - MOBILIZON_INSTANCE_REGISTRATIONS_OPEN=true
+      - MOBILIZON_DATABASE_PASSWORD=myp@ssw0rd
+      - MOBILIZON_DATABASE_USERNAME=mobilizon
+      - MOBILIZON_DATABASE_DBNAME=mobilizon
+      - MOBILIZON_DATABASE_HOST=postgres
+      - MOBILIZON_SMTP_SERVER=${SMTP_HOST}
+      - MOBILIZON_SMTP_HOSTNAME=${SMTP_HOST}
+      - MOBILIZON_SMTP_PORT=${SMTP_PORT:-587}
+      - MOBILIZON_SMTP_SSL=${SMTP_SSL:-true}
+      - MOBILIZON_SMTP_USERNAME=${SMTP_USERNAME}
+      - MOBILIZON_SMTP_PASSWORD=${SMTP_PASSWORD}
+    command: >
+      sh -c "cd js &&
+      yarn install &&
+      cd ../ &&
+      mix deps.get &&
+      mix compile &&
+      mix ecto.create &&
+      mix ecto.migrate &&
+      mix phx.server"
+    deploy:
+      labels:
+        - traefik.enable=true
+        - traefik.http.routers.mobilizon-${NUMBER:-1}.rule=Host(`${DOMAIN:-mobilizon.localhost}`)
+        - traefik.http.routers.mobilizon-${NUMBER:-1}.entrypoints=${SCHEME:-https}
+        - traefik.http.routers.mobilizon-${NUMBER:-1}.service=mobilizon-${NUMBER:-1}
+        - traefik.http.routers.mobilizon-${NUMBER:-1}.tls.certresolver=letsencrypt
+        - traefik.http.services.mobilizon-${NUMBER:-1}.loadbalancer.server.port=4000
+    networks:
+      - internal
+      - traefik
+
+  postgres:
+    image: mdillon/postgis:11
+    environment:
+      - POSTGRES_DB=mobilizon
+      - POSTGRES_USER=mobilizon
+      - POSTGRES_PASSWORD=myp@ssw0rd
+    volumes:
+      - ${VOLUME_PATH}postgres:/var/lib/postgresql/data
+    networks:
+      - internal
+
+volumes:
+  postgres:
+  uploads:
+
+networks:
+  internal:
+    driver: overlay
+    attachable: true
+  traefik:
+    external: true
+    name: traefik-net
